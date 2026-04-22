@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Health Crush Ultimate</title>
+<script src="https://code.jquery.com/jquery-4.0.0.min.js" integrity="sha256-OaVG6prZf4v69dPg6PhVattBXkcOWQB62pdZ3ORyrao=" crossorigin="anonymous"></script>
+<style>
+body{
+    text-align:center;
+    font-family:Arial;
+    background:linear-gradient(to right,#a7eaf3,#8beff1);
+    color:white;
+}
+
+#grid{
+    width:320px;
+    margin:auto;
+    display:grid;
+    grid-template-columns:repeat(8,40px);
+    gap:4px;
+}
+
+.cell{
+    width:40px;
+    height:40px;
+    background:white;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:24px;
+    cursor:pointer;
+    transition: transform 0.2s, opacity 0.2s;
+}
+
+.selected{background:lightblue; transform:scale(1.2);}
+.match{background:yellow; transform:scale(1.3);}
+
+.section{
+    margin:15px;
+    background:rgba(0,0,0,0.3);
+    padding:10px;
+    border-radius:10px;
+}
+
+input,button,select,textarea{
+    margin:5px;
+    padding:6px;
+    border-radius:6px;
+    border:none;
+}
+
+button{
+    background:#00c853;
+    color:white;
+    cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🍬💊 Health Crush Ultimate</h1>
+
+<div id="grid"></div>
+
+<!-- HEALTH -->
+<div class="section">
+<h3>📊 Health Input</h3>
+<input id="bpm" placeholder="BPM">
+<input id="bp" placeholder="BP">
+<input id="sugar" placeholder="Sugar">
+
+<select id="symptoms" multiple>
+<option value="fever">Fever</option>
+<option value="fatigue">Fatigue</option>
+<option value="dizziness">Dizziness</option>
+</select>
+
+<button onclick="analyzeHealth()">Analyze</button>
+<p id="result"></p>
+</div>
+
+<!-- MEDICATION -->
+<div class="section">
+<h3>💊 Medication Reminder</h3>
+<input id="medName" placeholder="Medicine">
+<input type="time" id="medTime">
+<button onclick="addReminder()">Add</button>
+<ul id="remList"></ul>
+</div>
+
+<!-- DOCTOR -->
+<div class="section">
+<h3>👨‍⚕️ Doctor Appointment</h3>
+<input id="docName" placeholder="Doctor Name">
+<input type="date" id="docDate">
+<button onclick="addDoctor()">Add</button>
+<ul id="docList"></ul>
+
+<h4>📝 Doctor Suggestions</h4>
+<textarea id="notes" placeholder="Doctor advice"></textarea><br>
+<button onclick="saveNotes()">Save</button>
+<button onclick="deleteNotes()">❌ Clear</button>
+<p id="saved"></p>
+</div>
+
+<script>
+// ===== GAME ENGINE =====
+const width = 8;
+let grid = [];
+let selected = null;
+let isBusy = false;
+
+const items = ["💊","💉","🍔","🍎"];
+
+function createGrid(){
+    $("#grid").html("");
+    grid = [];
+
+    for(let i=0;i<64;i++){
+        let val = items[Math.floor(Math.random()*items.length)];
+        grid.push(val);
+        $("#grid").append(`<div class="cell" data-id="${i}">${val}</div>`);
+    }
+}
+
+$(document).on("click",".cell",function(){
+    if(isBusy) return;
+
+    let id = $(this).data("id");
+
+    if(selected === null){
+        selected = id;
+        $(this).addClass("selected");
+    } else {
+        if(isAdjacent(selected,id)){
+            swap(selected,id);
+        }
+        $(".cell").removeClass("selected");
+        selected = null;
+    }
+});
+
+function isAdjacent(a,b){
+    return (
+        (Math.abs(a-b) === 1 && Math.floor(a/8) === Math.floor(b/8))
+        || Math.abs(a-b) === 8
+    );
+}
+
+function swap(i1,i2){
+    isBusy = true;
+
+    let c1 = $(`[data-id=${i1}]`);
+    let c2 = $(`[data-id=${i2}]`);
+
+    let dx = (i2%8 - i1%8) * 40;
+    let dy = (Math.floor(i2/8) - Math.floor(i1/8)) * 40;
+
+    c1.css("transform",`translate(${dx}px,${dy}px)`);
+    c2.css("transform",`translate(${-dx}px,${-dy}px)`);
+
+    setTimeout(()=>{
+        [grid[i1],grid[i2]] = [grid[i2],grid[i1]];
+        render();
+
+        if(!checkMatches()){
+            // reverse
+            c1.css("transform",`translate(${-dx}px,${-dy}px)`);
+            c2.css("transform",`translate(${dx}px,${dy}px)`);
+
+            setTimeout(()=>{
+                [grid[i1],grid[i2]] = [grid[i2],grid[i1]];
+                render();
+                isBusy = false;
+            },200);
+        } else {
+            isBusy = false;
+        }
+    },200);
+}
+
+function render(){
+    $(".cell").each(function(){
+        let id = $(this).data("id");
+        $(this).text(grid[id]).css("transform","").show().removeClass("match");
+    });
+}
+
+function checkMatches(){
+    let matches = [];
+
+    for(let i=0;i<64;i++){
+        if(i%8 < 6){
+            if(grid[i] && grid[i]===grid[i+1] && grid[i]===grid[i+2]){
+                matches.push(i,i+1,i+2);
+            }
+        }
+
+        if(i < 48){
+            if(grid[i] && grid[i]===grid[i+8] && grid[i]===grid[i+16]){
+                matches.push(i,i+8,i+16);
+            }
+        }
+    }
+
+    if(matches.length){
+        animateMatch([...new Set(matches)]);
+        return true;
+    }
+    return false;
+}
+
+function animateMatch(arr){
+    isBusy = true;
+
+    arr.forEach(i=>{
+        $(`[data-id=${i}]`).addClass("match").fadeOut(150);
+    });
+
+    setTimeout(()=>{
+        arr.forEach(i=>grid[i]=null);
+        render();
+        dropTiles();
+    },200);
+}
+
+function dropTiles(){
+    for(let col=0; col<8; col++){
+        for(let row=7; row>=0; row--){
+            let i = row*8 + col;
+            if(grid[i]===null){
+                for(let k=row-1;k>=0;k--){
+                    let above = k*8 + col;
+                    if(grid[above]!==null){
+                        grid[i]=grid[above];
+                        grid[above]=null;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    for(let i=0;i<8;i++){
+        if(grid[i]===null){
+            grid[i]=items[Math.floor(Math.random()*items.length)];
+        }
+    }
+
+    render();
+
+    setTimeout(()=>{
+        if(!checkMatches()){
+            isBusy = false;
+        }
+    },200);
+}
+
+// ===== HEALTH =====
+function analyzeHealth(){
+    let bpm=$("#bpm").val();
+    let bp=$("#bp").val();
+    let sugar=$("#sugar").val();
+    let sym=$("#symptoms").val()||[];
+
+    let msg="✅ Healthy";
+    if(bpm>100 || bp>120 || sugar>140 || sym.includes("dizziness")){
+        msg="⚠️ Take care!";
+    }
+
+    $("#result").text(msg);
+}
+
+// ===== MEDICATION =====
+function addReminder(){
+    let name=$("#medName").val();
+    let time=$("#medTime").val();
+
+    let list=JSON.parse(localStorage.getItem("rem"))||[];
+    list.push({name,time});
+    localStorage.setItem("rem",JSON.stringify(list));
+    showRem();
+}
+
+function showRem(){
+    let list=JSON.parse(localStorage.getItem("rem"))||[];
+    $("#remList").html("");
+
+    list.forEach((r,i)=>{
+        $("#remList").append(`<li>${r.name} at ${r.time} <button onclick="deleteReminder(${i})">❌</button></li>`);
+    });
+}
+
+function deleteReminder(i){
+    let list=JSON.parse(localStorage.getItem("rem"))||[];
+    list.splice(i,1);
+    localStorage.setItem("rem",JSON.stringify(list));
+    showRem();
+}
+
+// ===== DOCTOR =====
+function addDoctor(){
+    let name=$("#docName").val();
+    let date=$("#docDate").val();
+
+    let list=JSON.parse(localStorage.getItem("doc"))||[];
+    list.push({name,date});
+    localStorage.setItem("doc",JSON.stringify(list));
+    showDoc();
+}
+
+function showDoc(){
+    let list=JSON.parse(localStorage.getItem("doc"))||[];
+    $("#docList").html("");
+
+    list.forEach((d,i)=>{
+        $("#docList").append(`<li>${d.name} on ${d.date} <button onclick="deleteDoctor(${i})">❌</button></li>`);
+    });
+}
+
+function deleteDoctor(i){
+    let list=JSON.parse(localStorage.getItem("doc"))||[];
+    list.splice(i,1);
+    localStorage.setItem("doc",JSON.stringify(list));
+    showDoc();
+}
+
+// ===== NOTES =====
+function saveNotes(){
+    let n=$("#notes").val();
+    localStorage.setItem("notes",n);
+    $("#saved").text("Saved: "+n);
+}
+
+function deleteNotes(){
+    localStorage.removeItem("notes");
+    $("#notes").val("");
+    $("#saved").text("Notes cleared");
+}
+
+// LOAD
+showRem();
+showDoc();
+$("#saved").text(localStorage.getItem("notes")||"");
+
+createGrid();
+</script>
+
+</body>
+</html>
